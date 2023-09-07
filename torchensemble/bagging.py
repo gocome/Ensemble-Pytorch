@@ -169,7 +169,6 @@ class BaggingClassifier(BaseClassifier):
             outputs = [
                 F.softmax(estimator(*x), dim=1) for estimator in estimators
             ]
-            # proba = op.average(outputs)
 
             return outputs
 
@@ -237,25 +236,28 @@ class BaggingClassifier(BaseClassifier):
                                 _, predicted = torch.max(output.data, 1)
                                 corrects[i] += (predicted == target).sum().item()
                             total += target.size(0)
-                        accs = 100 * corrects / total
+                        accs = [100 * correct / total for correct in corrects]
 
+                        best_acc_history = sum(best_accs) / len(best_accs)
                         for i, (acc, best_acc, estimator) in enumerate(zip(accs, best_accs, estimators)):
                             if acc > best_acc:
                                 best_accs[i] = acc
-                                self.estimators_[i] = estimator
-                                if save_model:
-                                    io.save(self, save_dir, self.logger)
-                                msg = (
-                                    "Epoch: {:03d} | Base Model: {:03d} | Validation Acc: {:.3f}"
-                                    " % | Historical Best: {:.3f} %"
-                                )
-                                self.logger.info(msg.format(epoch, i, acc, best_acc))
-                                if self.tb_logger:
-                                    self.tb_logger.add_scalar(
-                                        "bagging/Validation_Acc", acc, epoch
-                                    )
                             else:
                                 estimators[i] = self.estimators_[i]
+                        best_acc_latest = sum(best_accs) / len(best_accs)
+                        self.estimators_ = nn.ModuleList()
+                        self.estimators_.extend(estimators)
+                        if save_model:
+                            io.save(self, save_dir, self.logger)
+                        msg = (
+                            "Epoch: {:03d} | Validation Acc Average: {:.3f}"
+                            " % | Historical Best: {:.3f} %"
+                        )
+                        self.logger.info(msg.format(epoch, best_acc_latest, best_acc_history))
+                        if self.tb_logger:
+                            self.tb_logger.add_scalar(
+                                "bagging/Validation_Acc", acc, epoch
+                            )
                 # No validation
                 else:
                     self.estimators_ = nn.ModuleList()
